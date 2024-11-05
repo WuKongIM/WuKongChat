@@ -36,12 +36,12 @@ func (m *messageExtraDB) update(md *messageExtraModel) error {
 	return err
 }
 
-func (m *messageExtraDB) queryWithMessageIDsAndUID(messageIDs []string, loginUID string) ([]*messageExtraDetailModel, error) {
+func (m *messageExtraDB) queryWithMessageIDs(messageIDs []string) ([]*messageExtraModel, error) {
 	if len(messageIDs) <= 0 {
 		return nil, nil
 	}
-	var models []*messageExtraDetailModel
-	_, err := m.session.Select("message_extra.*,(select count(*) from member_readed where member_readed.message_id=message_extra.message_id and member_readed.uid='"+loginUID+"') readed,(select created_at from member_readed where member_readed.message_id=message_extra.message_id and member_readed.uid='"+loginUID+"') readed_at").From("message_extra").Where("message_id in ?", messageIDs).Load(&models)
+	var models []*messageExtraModel
+	_, err := m.session.Select("*").From("message_extra").Where("message_id in ?", messageIDs).Load(&models)
 	return models, err
 }
 
@@ -51,9 +51,9 @@ func (m *messageExtraDB) queryWithMessageID(messageID string) (*messageExtraMode
 	return model, err
 }
 
-func (m *messageExtraDB) sync(version int64, channelID string, channelType uint8, limit uint64, loginUID string) ([]*messageExtraDetailModel, error) {
-	var models []*messageExtraDetailModel
-	selectSql := "message_extra.*,(select count(*) from member_readed where member_readed.message_id=message_extra.message_id and member_readed.uid='" + loginUID + "') readed,(select created_at from member_readed where member_readed.message_id=message_extra.message_id and member_readed.uid='" + loginUID + "') readed_at"
+func (m *messageExtraDB) sync(version int64, channelID string, channelType uint8, limit uint64) ([]*messageExtraModel, error) {
+	var models []*messageExtraModel
+	selectSql := "*"
 	builder := m.session.Select(selectSql).From("message_extra")
 	var err error
 	if version == 0 {
@@ -70,20 +70,13 @@ func (m *messageExtraDB) sync(version int64, channelID string, channelType uint8
 	return models, err
 }
 
-type messageExtraDetailModelSlice []*messageExtraDetailModel
+type messageExtraDetailModelSlice []*messageExtraModel
 
 func (m messageExtraDetailModelSlice) Len() int {
 	return len(m)
 }
 func (m messageExtraDetailModelSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 func (m messageExtraDetailModelSlice) Less(i, j int) bool { return m[i].Version < m[j].Version }
-
-type messageExtraDetailModel struct {
-	messageExtraModel
-	Readed   int          // 是否已读（针对于自己）
-	ReadedAt dbr.NullTime // 已读时间
-
-}
 
 type messageExtraModel struct {
 	MessageID       string
@@ -100,6 +93,5 @@ type messageExtraModel struct {
 	EditedAt        int // 编辑时间 时间戳（秒）
 	IsDeleted       int
 	Version         int64 // 数据版本
-	IsPinned        int   // 是否置顶
 	db.BaseModel
 }

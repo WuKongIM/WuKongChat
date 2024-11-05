@@ -4,14 +4,13 @@ import (
 	"math/rand"
 
 	"github.com/TangSengDaoDao/TangSengDaoDaoServer/modules/base"
-	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/network"
-	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/util"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
-	"go.uber.org/zap"
-
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/network"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/util"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/wkhttp"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // User 用户相关API
@@ -140,7 +139,7 @@ type loginReq struct {
 type userResp struct {
 	UID   string `json:"uid"`
 	Name  string `json:"name"`
-	Token string `json:"token"`
+	Token string `json:"token,omitempty"`
 }
 
 // Names 注册用户随机名字

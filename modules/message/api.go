@@ -94,7 +94,7 @@ func (m *Message) syncMessageExtra(c *wkhttp.Context) {
 		c.ResponseError(errors.New("频道ID不能为空！"))
 		return
 	}
-	extraModels, err := m.messageExtraDB.sync(extraVersion, fakeChannelID, req.ChannelType, uint64(limit), req.LoginUID)
+	extraModels, err := m.messageExtraDB.sync(extraVersion, fakeChannelID, req.ChannelType, uint64(limit))
 	if err != nil {
 		c.ResponseErrorf("同步消息扩展数据失败！", err)
 		return
@@ -170,10 +170,6 @@ func (m *Message) delete(c *wkhttp.Context) {
 	c.ResponseOK()
 }
 
-func (m *Message) genMessageExtraSeq(channelID string) int64 {
-	return m.ctx.GenSeq(fmt.Sprintf("%s:%s", common.MessageExtraSeqKey, channelID))
-}
-
 // 撤回消息
 func (m *Message) revoke(c *wkhttp.Context) {
 	var req *revokeReq
@@ -205,7 +201,7 @@ func (m *Message) revoke(c *wkhttp.Context) {
 		c.ResponseError(errors.New("查询消息扩展错误"))
 		return
 	}
-	version := m.genMessageExtraSeq(fakeChannelID)
+	version := time.Now().Unix()
 	if messageExtr == nil {
 		err = m.messageExtraDB.insert(&messageExtraModel{
 			MessageID:   req.MessageID,
@@ -236,7 +232,7 @@ func (m *Message) revoke(c *wkhttp.Context) {
 	// 发给指定频道
 	err = m.ctx.SendRevoke(&config.MsgRevokeReq{
 		Operator:     req.LoginUID,
-		OperatorName: c.GetLoginName(),
+		OperatorName: req.LoginUID,
 		FromUID:      req.LoginUID,
 		ChannelID:    req.ChannelID,
 		ChannelType:  req.ChannelType,
@@ -291,11 +287,11 @@ func newSyncChannelMessageResp(resp *config.SyncChannelMessageResp, loginUID str
 		}
 
 		// 消息全局扩张
-		messageExtras, err := messageExtraDB.queryWithMessageIDsAndUID(messageIDs, loginUID)
+		messageExtras, err := messageExtraDB.queryWithMessageIDs(messageIDs)
 		if err != nil {
 			log.Error("查询消息扩展字段失败！", zap.Error(err))
 		}
-		messageExtraMap := map[string]*messageExtraDetailModel{}
+		messageExtraMap := map[string]*messageExtraModel{}
 		if len(messageExtras) > 0 {
 			for _, messageExtra := range messageExtras {
 				messageExtraMap[messageExtra.MessageID] = messageExtra
@@ -375,7 +371,7 @@ type MsgSyncResp struct {
 
 }
 
-func (m *MsgSyncResp) from(msgResp *config.MessageResp, loginUID string, messageExtraM *messageExtraDetailModel, messageUserExtraM *messageUserExtraModel) {
+func (m *MsgSyncResp) from(msgResp *config.MessageResp, loginUID string, messageExtraM *messageExtraModel, messageUserExtraM *messageUserExtraModel) {
 	m.Header.NoPersist = msgResp.Header.NoPersist
 	m.Header.RedDot = msgResp.Header.RedDot
 	m.Header.SyncOnce = msgResp.Header.SyncOnce
@@ -397,7 +393,6 @@ func (m *MsgSyncResp) from(msgResp *config.MessageResp, loginUID string, message
 		m.Revoke = messageExtraM.Revoke
 		m.Revoker = messageExtraM.Revoker
 		m.ReadedCount = messageExtraM.ReadedCount
-		m.Readed = messageExtraM.Readed
 		m.ExtraVersion = messageExtraM.Version
 
 		m.MessageExtra = newMessageExtraResp(messageExtraM)
@@ -561,7 +556,7 @@ func (d *deleteReq) check() error {
 	return nil
 }
 
-func newMessageExtraResp(m *messageExtraDetailModel) *messageExtraResp {
+func newMessageExtraResp(m *messageExtraModel) *messageExtraResp {
 
 	messageID, _ := strconv.ParseInt(m.MessageID, 10, 64)
 
@@ -574,22 +569,17 @@ func newMessageExtraResp(m *messageExtraDetailModel) *messageExtraResp {
 	}
 
 	var readedAt int64 = 0
-	if m.ReadedAt.Valid {
-		readedAt = m.ReadedAt.Time.Unix()
-	}
 
 	return &messageExtraResp{
 		MessageID:       messageID,
 		MessageIDStr:    m.MessageID,
 		Revoke:          m.Revoke,
 		Revoker:         m.Revoker,
-		Readed:          m.Readed,
 		ReadedAt:        readedAt,
 		ReadedCount:     m.ReadedCount,
 		ContentEdit:     contentEditMap,
 		EditedAt:        m.EditedAt,
 		IsMutualDeleted: m.IsDeleted,
-		IsPinned:        m.IsPinned,
 		ExtraVersion:    m.Version,
 	}
 }

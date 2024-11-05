@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/TangSengDaoDao/TangSengDaoDaoServer/modules/base"
-	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/network"
-	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/util"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/network"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/util"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/wkhttp"
 	"go.uber.org/zap"
 )
@@ -34,22 +34,26 @@ func New(ctx *config.Context) *Group {
 // Route 路由配置
 func (g *Group) Route(r *wkhttp.WKHttp) {
 
-	group := r.Group("/v1/group")
+	v := r.Group("/v1")
 	{
-		group.POST("/create", g.create) // 创建群
-	}
-	groups := r.Group("/v1/groups")
-	{
-		groups.GET("/:group_no", g.groupGet) // 群详情
+		v.POST("/group/create", g.create)      // 创建群
+		v.GET("/groups/:group_no", g.groupGet) // 群详情
 	}
 }
 
 // create 创建群
 func (g *Group) create(c *wkhttp.Context) {
-	var req CreateReq
-	if err := c.Bind(&req); err != nil {
-		g.Error("参数错误", zap.Error(err))
-		c.ResponseError(errors.New("参数错误"))
+	var req createReq
+	if err := c.BindJSON(&req); err != nil {
+		c.ResponseError(errors.New("请求数据格式有误！"))
+		return
+	}
+	if req.GroupNo == "" {
+		c.ResponseError(errors.New("群号不能为空"))
+		return
+	}
+	if req.LoginUID == "" {
+		c.ResponseError(errors.New("登录用户ID不能为空"))
 		return
 	}
 	model, err := g.db.query(req.GroupNo)
@@ -60,7 +64,7 @@ func (g *Group) create(c *wkhttp.Context) {
 	}
 	if model == nil {
 		name := fmt.Sprintf("群%s", req.GroupNo)
-		if err := g.db.insert(&GroupModel{GroupNo: req.GroupNo, Name: name}); err != nil {
+		if err := g.db.insert(&GroupModel{GroupNo: req.GroupNo, Name: name, Creator: req.LoginUID}); err != nil {
 			g.Error("创建群失败", zap.Error(err))
 			c.ResponseError(errors.New("创建群失败"))
 			return
@@ -100,19 +104,19 @@ func (g *Group) groupGet(c *wkhttp.Context) {
 		return
 	}
 
-	c.Response(&GroupResp{
+	c.Response(&groupResp{
 		GroupNo: model.GroupNo,
 		Name:    model.Name,
 	})
 }
 
-type GroupResp struct {
+type groupResp struct {
 	GroupNo string `json:"group_no"`
 	Name    string `json:"name"`
 	Avatar  string `json:"avatar"`
 }
 
-type CreateReq struct {
+type createReq struct {
 	GroupNo  string `json:"group_no"`
 	LoginUID string `json:"login_uid"`
 }

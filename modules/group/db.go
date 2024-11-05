@@ -26,12 +26,13 @@ func (db *DB) query(groupNo string) (*GroupModel, error) {
 	return group, err
 }
 
-func (db *DB) insert(group *GroupModel) error {
-	_, err := db.session.InsertInto("`group`").Columns(util.AttrToUnderscore(group)...).Record(group).Exec()
+func (db *DB) insert(m *GroupModel) error {
+	_, err := db.session.InsertInto("group").Columns(util.AttrToUnderscore(m)...).Record(m).Exec()
 	return err
 }
 
 type GroupModel struct {
 	GroupNo string
 	Name    string
+	Creator string
 }

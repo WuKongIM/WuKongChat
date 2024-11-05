@@ -6,8 +6,11 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/TangSengDaoDao/TangSengDaoDaoServer/modules/base"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/network"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/util"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/wkhttp"
 	"go.uber.org/zap"
 )
@@ -99,12 +102,35 @@ func (co *Conversation) syncUserConversation(c *wkhttp.Context) {
 		}
 	}
 
-	conversations, err := co.ctx.IMSyncUserConversation(loginUID, version, req.MsgCount, lastMsgSeqs, nil)
+	resp, err := network.Post(base.APIURL+"/conversation/sync", []byte(util.ToJson(map[string]interface{}{
+		"uid":           req.LoginUID,
+		"version":       version,
+		"last_msg_seqs": lastMsgSeqs,
+		"msg_count":     req.MsgCount,
+		"larges":        nil,
+	})), nil)
 	if err != nil {
-		co.Error("同步离线后的最近会话失败！", zap.Error(err), zap.String("loginUID", loginUID))
-		c.ResponseError(errors.New("同步离线后的最近会话失败！"))
+		co.Error("获取IM离线最近会话失败！", zap.Error(err))
+		c.ResponseError(errors.New("获取IM离线最近会话失败！"))
 		return
 	}
+	err = base.HandlerIMError(resp)
+	if err != nil {
+		c.ResponseError(err)
+	}
+	var conversations []*config.SyncUserConversationResp
+	err = util.ReadJsonByByte([]byte(resp.Body), &conversations)
+	if err != nil {
+		c.ResponseError(errors.New("解析IM离线最近会话失败！"))
+		return
+	}
+
+	// conversations, err := co.ctx.IMSyncUserConversation(loginUID, version, req.MsgCount, lastMsgSeqs, nil)
+	// if err != nil {
+	// 	co.Error("同步离线后的最近会话失败！", zap.Error(err), zap.String("loginUID", loginUID))
+	// 	c.ResponseError(errors.New("同步离线后的最近会话失败！"))
+	// 	return
+	// }
 
 	syncUserConversationResps := make([]*SyncUserConversationResp, 0, len(conversations))
 	userKey := loginUID
@@ -277,11 +303,11 @@ func newSyncUserConversationResp(resp *config.SyncUserConversationResp, loginUID
 		}
 
 		// 消息扩充数据
-		messageExtras, err := messageExtraDB.queryWithMessageIDsAndUID(messageIDs, loginUID)
+		messageExtras, err := messageExtraDB.queryWithMessageIDs(messageIDs)
 		if err != nil {
 			log.Error("查询消息扩展字段失败！", zap.Error(err))
 		}
-		messageExtraMap := map[string]*messageExtraDetailModel{}
+		messageExtraMap := map[string]*messageExtraModel{}
 		if len(messageExtras) > 0 {
 			for _, messageExtra := range messageExtras {
 				messageExtraMap[messageExtra.MessageID] = messageExtra

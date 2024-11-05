@@ -6,6 +6,7 @@ import (
 
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/db"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/util"
 	"github.com/gocraft/dbr/v2"
 )
 
@@ -20,7 +21,10 @@ func newMessageUserExtraDB(ctx *config.Context) *messageUserExtraDB {
 		session: ctx.DB(),
 	}
 }
-
+func (m *messageUserExtraDB) insert(md *messageUserExtraModel) error {
+	_, err := m.session.InsertInto(m.getTable(md.UID)).Columns(util.AttrToUnderscore(md)...).Record(md).Exec()
+	return err
+}
 func (m *messageUserExtraDB) insertOrUpdateDeleted(md *messageUserExtraModel) error {
 	sq := fmt.Sprintf("INSERT INTO %s (uid,message_id,message_seq,channel_id,channel_type,message_is_deleted) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE  message_is_deleted=VALUES(message_is_deleted)", m.getTable(md.UID))
 	_, err := m.session.InsertBySql(sq, md.UID, md.MessageID, md.MessageSeq, md.ChannelID, md.ChannelType, md.MessageIsDeleted).Exec()
