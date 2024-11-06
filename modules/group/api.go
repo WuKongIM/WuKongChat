@@ -3,6 +3,9 @@ package group
 import (
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"net/http"
+	"os"
 
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
@@ -36,9 +39,25 @@ func (g *Group) Route(r *wkhttp.WKHttp) {
 
 	v := r.Group("/v1")
 	{
-		v.POST("/group/create", g.create)      // 创建群
-		v.GET("/groups/:group_no", g.groupGet) // 群详情
+		v.POST("/group/create", g.create)                // 创建群
+		v.GET("/groups/:group_no", g.groupGet)           // 群详情
+		v.GET("/groups/:group_no/avatar", g.groupAvatar) // 群头像
 	}
+}
+
+// groupAvatar 群头像
+func (g *Group) groupAvatar(c *wkhttp.Context) {
+	groupNo := c.Param("group_no")
+	avatarID := crc32.ChecksumIEEE([]byte(groupNo)) % uint32(20)
+	path := fmt.Sprintf("assets/assets/avatar/g_%d.jpeg", avatarID)
+	c.Header("Content-Type", "image/jpeg")
+	avatarBytes, err := os.ReadFile(path)
+	if err != nil {
+		g.Error("头像读取失败！", zap.Error(err))
+		c.Writer.WriteHeader(http.StatusNotFound)
+		return
+	}
+	c.Writer.Write(avatarBytes)
 }
 
 // create 创建群
@@ -100,13 +119,18 @@ func (g *Group) groupGet(c *wkhttp.Context) {
 		return
 	}
 	if model == nil {
-		c.ResponseError(errors.New("群不存在"))
-		return
+		err = g.db.insert(&GroupModel{GroupNo: groupNo, Name: "群" + groupNo})
+		if err != nil {
+			g.Error("创建群失败", zap.Error(err))
+			c.ResponseError(errors.New("创建群失败"))
+			return
+		}
 	}
-
+	avatar := fmt.Sprintf("groups/%s/avatar", groupNo)
 	c.Response(&groupResp{
 		GroupNo: model.GroupNo,
 		Name:    model.Name,
+		Avatar:  avatar,
 	})
 }
 

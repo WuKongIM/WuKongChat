@@ -1,7 +1,11 @@
 package user
 
 import (
+	"fmt"
+	"hash/crc32"
 	"math/rand"
+	"net/http"
+	"os"
 
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
@@ -35,9 +39,56 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 
 	v := r.Group("/v1")
 	{
-		v.POST("/user/login", u.login) // 用户登录
-		v.GET("/users/:uid", u.get)    // 根据uid查询用户信息
+		v.POST("/user/login", u.login)        // 用户登录
+		v.GET("/users/:uid/route", u.route)   // 获取用户路由
+		v.GET("/users/:uid", u.get)           // 根据uid查询用户信息
+		v.GET("/users/:uid/avatar", u.avatar) // 获取用户头像
 	}
+}
+
+// 头像
+func (u *User) avatar(c *wkhttp.Context) {
+	uid := c.Param("uid")
+	if uid == "" {
+		c.ResponseError(errors.New("uid不能为空"))
+		return
+	}
+	avatarID := crc32.ChecksumIEEE([]byte(uid)) % uint32(20)
+	path := fmt.Sprintf("assets/assets/avatar/u_%d.jpeg", avatarID)
+	c.Header("Content-Type", "image/jpeg")
+	avatarBytes, err := os.ReadFile(path)
+	if err != nil {
+		u.Error("头像读取失败！", zap.Error(err))
+		c.Writer.WriteHeader(http.StatusNotFound)
+		return
+	}
+	c.Writer.Write(avatarBytes)
+}
+
+// 获取连接IM地址
+func (u *User) route(c *wkhttp.Context) {
+	resp, err := network.Get(base.APIURL+"/route", nil, nil)
+	if err != nil {
+		u.Error("更新IM token错误", zap.Error(err))
+		c.ResponseError(err)
+		return
+	}
+	err = base.HandlerIMError(resp)
+	if err != nil {
+		c.ResponseError(err)
+		return
+	}
+	var result *userRouteResp
+	if err := util.ReadJsonByByte([]byte(resp.Body), &result); err != nil {
+		u.Error("解析结果错误", zap.Error(err))
+		c.ResponseError(errors.New("解析结果错误"))
+		return
+	}
+	c.Response(&userRouteResp{
+		TcpAddr: result.TcpAddr,
+		WsAddr:  result.WsAddr,
+		WssAddr: result.WssAddr,
+	})
 }
 
 // 用户资料
@@ -54,12 +105,22 @@ func (u *User) get(c *wkhttp.Context) {
 		return
 	}
 	if model == nil {
-		c.ResponseError(errors.New("用户不存在"))
-		return
+		err = u.db.insert(&userModel{
+			UID:  uid,
+			Name: Names[rand.Intn(len(Names)-1)],
+		})
+		if err != nil {
+			u.Error("新增用户错误", zap.Error(err))
+			c.ResponseError(err)
+			return
+		}
 	}
+
+	avatar := fmt.Sprintf("users/%s/avatar", uid)
 	c.Response(&userResp{
-		UID:  model.UID,
-		Name: model.Name,
+		UID:    model.UID,
+		Name:   model.Name,
+		Avatar: avatar,
 	})
 }
 
@@ -126,6 +187,12 @@ func (u *User) login(c *wkhttp.Context) {
 	})
 }
 
+type userRouteResp struct {
+	TcpAddr string `json:"tcp_addr"` // TCP地址
+	WsAddr  string `json:"ws_addr"`  // WebSocket地址
+	WssAddr string `json:"wss_addr"` // WebSocket Secure地址
+}
+
 // UpdateIMTokenResp 更新IM Token的返回参数
 type UpdateIMTokenResp struct {
 	Status int `json:"status"` // 状态
@@ -137,9 +204,10 @@ type loginReq struct {
 	DeviceLevel int    `json:"device_level"`
 }
 type userResp struct {
-	UID   string `json:"uid"`
-	Name  string `json:"name"`
-	Token string `json:"token,omitempty"`
+	UID    string `json:"uid"`
+	Name   string `json:"name"`
+	Token  string `json:"token,omitempty"`
+	Avatar string `json:"avatar,omitempty"`
 }
 
 // Names 注册用户随机名字
