@@ -1,6 +1,6 @@
 package register
 
-import "github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/wkhttp"
+import "github.com/WuKongIM/WuKongIMBusinessExtra/pkg/wkhttp"
 
 // APIRouter api路由者
 type APIRouter interface {

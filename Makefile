@@ -1,16 +1,16 @@
 build:
-	docker build -t tangsengdaodaoserver .
+	docker build -t wukongimbusinessextra .
 push:
-	docker tag tangsengdaodaoserver registry.cn-shanghai.aliyuncs.com/wukongim/tangsengdaodaoserver:latest
+	docker tag wukongimbusinessextra registry.cn-shanghai.aliyuncs.com/wukongim/wukongimbusinessextra:latest
 	docker push registry.cn-shanghai.aliyuncs.com/wukongim/wukongchatserver:latest
 deploy:
-	docker build -t tangsengdaodaoserver .
-	docker tag tangsengdaodaoserver registry.cn-shanghai.aliyuncs.com/wukongim/tangsengdaodaoserver:latest
-	docker push registry.cn-shanghai.aliyuncs.com/wukongim/tangsengdaodaoserver:latest
-deploy-v1.5:
-	docker build -t tangsengdaodaoserver .
-	docker tag tangsengdaodaoserver registry.cn-shanghai.aliyuncs.com/wukongim/tangsengdaodaoserver:v1.5
-	docker push registry.cn-shanghai.aliyuncs.com/wukongim/tangsengdaodaoserver:v1.5
+	docker build -t wukongimbusinessextra .
+	docker tag wukongimbusinessextra registry.cn-shanghai.aliyuncs.com/wukongim/wukongimbusinessextra:latest
+	docker push registry.cn-shanghai.aliyuncs.com/wukongim/wukongimbusinessextra:latest
+deploy-v1.0:
+	docker build -t wukongimbusinessextra .
+	docker tag wukongimbusinessextra registry.cn-shanghai.aliyuncs.com/wukongim/wukongimbusinessextra:v1.0
+	docker push registry.cn-shanghai.aliyuncs.com/wukongim/wukongimbusinessextra:v1.0
 run-dev:
 	docker-compose build;docker-compose up -d
 stop-dev:

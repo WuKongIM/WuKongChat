@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/cache"
-	"github.com/TangSengDaoDao/TangSengDaoDaoServer/pkg/log"
+	"github.com/WuKongIM/WuKongIMBusinessExtra/pkg/cache"
+	"github.com/WuKongIM/WuKongIMBusinessExtra/pkg/log"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"go.uber.org/zap"

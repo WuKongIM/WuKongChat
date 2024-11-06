@@ -8,11 +8,11 @@ import (
 	"runtime"
 	"strings"
 
-	_ "github.com/TangSengDaoDao/TangSengDaoDaoServer/internal"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/module"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/server"
+	_ "github.com/WuKongIM/WuKongIMBusinessExtra/internal"
 	"github.com/gin-gonic/gin"
 	"github.com/judwhite/go-svc"
 	"github.com/robfig/cron"

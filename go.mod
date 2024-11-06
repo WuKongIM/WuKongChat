@@ -1,12 +1,9 @@
-module github.com/TangSengDaoDao/TangSengDaoDaoServer
-
+module github.com/WuKongIM/WuKongIMBusinessExtra
 go 1.20
 
 require (
 	firebase.google.com/go/v4 v4.13.0
 	github.com/TangSengDaoDao/TangSengDaoDaoServerLib v1.0.8
-	github.com/alibabacloud-go/darabonba-openapi v0.2.1
-	github.com/alibabacloud-go/sms-intl-20180501 v1.0.1
 	github.com/alibabacloud-go/tea v1.2.1
 	github.com/aliyun/alibaba-cloud-sdk-go v1.62.487
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.7+incompatible
@@ -22,7 +19,6 @@ require (
 	github.com/gookit/goutil v0.6.12
 	github.com/judwhite/go-svc v1.2.1
 	github.com/mattn/go-sqlite3 v1.14.17
-	github.com/minio/minio-go/v7 v7.0.61
 	github.com/olivere/elastic v6.2.37+incompatible
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
