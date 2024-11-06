@@ -105,14 +105,19 @@ func (u *User) get(c *wkhttp.Context) {
 		return
 	}
 	if model == nil {
+		name := Names[rand.Intn(len(Names)-1)]
 		err = u.db.insert(&userModel{
 			UID:  uid,
-			Name: Names[rand.Intn(len(Names)-1)],
+			Name: name,
 		})
 		if err != nil {
 			u.Error("新增用户错误", zap.Error(err))
 			c.ResponseError(err)
 			return
+		}
+		model = &userModel{
+			UID:  uid,
+			Name: name,
 		}
 	}
 

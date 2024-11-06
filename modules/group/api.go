@@ -119,12 +119,14 @@ func (g *Group) groupGet(c *wkhttp.Context) {
 		return
 	}
 	if model == nil {
-		err = g.db.insert(&GroupModel{GroupNo: groupNo, Name: "群" + groupNo})
+		name := "群" + groupNo
+		err = g.db.insert(&GroupModel{GroupNo: groupNo, Name: name})
 		if err != nil {
 			g.Error("创建群失败", zap.Error(err))
 			c.ResponseError(errors.New("创建群失败"))
 			return
 		}
+		model = &GroupModel{GroupNo: groupNo, Name: name}
 	}
 	avatar := fmt.Sprintf("groups/%s/avatar", groupNo)
 	c.Response(&groupResp{
