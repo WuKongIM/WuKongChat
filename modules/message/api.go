@@ -230,13 +230,14 @@ func (m *Message) revoke(c *wkhttp.Context) {
 	}
 	messageIDI, _ := strconv.ParseInt(req.MessageID, 10, 64)
 	// 发给指定频道
-	err = m.ctx.SendRevoke(&config.MsgRevokeReq{
-		Operator:     req.LoginUID,
-		OperatorName: req.LoginUID,
-		FromUID:      req.LoginUID,
-		ChannelID:    req.ChannelID,
-		ChannelType:  req.ChannelType,
-		MessageID:    messageIDI,
+	err = base.SendCMD(config.MsgCMDReq{
+		FromUID:     req.LoginUID,
+		ChannelID:   req.ChannelID,
+		ChannelType: req.ChannelType,
+		CMD:         "messageRevoke",
+		Param: map[string]interface{}{
+			"message_id": fmt.Sprintf("%d", messageIDI),
+		},
 	})
 	if err != nil {
 		m.Error("发送撤回消息失败！", zap.Error(err))
