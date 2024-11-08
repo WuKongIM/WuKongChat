@@ -30,6 +30,10 @@ func (db *DB) insert(m *GroupModel) error {
 	_, err := db.session.InsertInto("group").Columns(util.AttrToUnderscore(m)...).Record(m).Exec()
 	return err
 }
+func (db *DB) updateName(name string, groupNo string) error {
+	_, err := db.session.Update("group").Set("name", name).Where("group_no=?", groupNo).Exec()
+	return err
+}
 
 type GroupModel struct {
 	GroupNo string

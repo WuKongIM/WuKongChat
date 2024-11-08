@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/common"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/network"
@@ -42,7 +43,44 @@ func (g *Group) Route(r *wkhttp.WKHttp) {
 		v.POST("/group/create", g.create)                // 创建群
 		v.GET("/groups/:group_no", g.groupGet)           // 群详情
 		v.GET("/groups/:group_no/avatar", g.groupAvatar) // 群头像
+		v.PUT("/groups/:group_no", g.groupUpdateName)    // 更新群资料
 	}
+}
+
+// 更新群名称
+func (g *Group) groupUpdateName(c *wkhttp.Context) {
+	groupNo := c.Param("group_no")
+	var req groupUpdateNameReq
+	if err := c.BindJSON(&req); err != nil {
+		c.ResponseError(errors.New("请求数据格式有误！"))
+		return
+	}
+	if req.Name == "" {
+		c.ResponseError(errors.New("群名称不能为空"))
+		return
+	}
+	if err := g.db.updateName(req.Name, groupNo); err != nil {
+		g.Error("更新群名称失败", zap.Error(err))
+		c.ResponseError(errors.New("更新群名称失败"))
+		return
+	}
+	// 发送cmd更新群资料
+	err := base.SendCMD(config.MsgCMDReq{
+		ChannelID:   groupNo,
+		ChannelType: common.ChannelTypeGroup.Uint8(),
+		FromUID:     req.LoginUID,
+		CMD:         common.CMDChannelUpdate,
+		Param: map[string]interface{}{
+			"channel_id":   groupNo,
+			"channel_type": common.ChannelTypeGroup.Uint8(),
+		},
+	})
+	if err != nil {
+		g.Error("发送更新群资料cmd错误", zap.Error(err))
+		c.ResponseError(errors.New("发送更新群资料cmd错误"))
+		return
+	}
+	c.ResponseOK()
 }
 
 // groupAvatar 群头像
@@ -141,7 +179,10 @@ type groupResp struct {
 	Name    string `json:"name"`
 	Avatar  string `json:"avatar"`
 }
-
+type groupUpdateNameReq struct {
+	LoginUID string `json:"login_uid"`
+	Name     string `json:"name"`
+}
 type createReq struct {
 	GroupNo  string `json:"group_no"`
 	LoginUID string `json:"login_uid"`
