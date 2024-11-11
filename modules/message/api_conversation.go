@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/common"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/log"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/network"
@@ -19,9 +20,9 @@ import (
 type Conversation struct {
 	ctx *config.Context
 	log.Log
-	messageExtraDB     *messageExtraDB
-	messageUserExtraDB *messageUserExtraDB
-
+	messageExtraDB                  *messageExtraDB
+	messageUserExtraDB              *messageUserExtraDB
+	channelOffsetDB                 *channelOffsetDB
 	syncConversationResultCacheMap  map[string][]string
 	syncConversationVersionMap      map[string]int64
 	syncConversationResultCacheLock sync.RWMutex
@@ -32,6 +33,7 @@ func NewConversation(ctx *config.Context) *Conversation {
 	return &Conversation{
 		ctx:                            ctx,
 		Log:                            log.NewTLog("Coversation"),
+		channelOffsetDB:                newChannelOffsetDB(ctx),
 		messageExtraDB:                 newMessageExtraDB(ctx),
 		messageUserExtraDB:             newMessageUserExtraDB(ctx),
 		syncConversationResultCacheMap: map[string][]string{},
@@ -44,11 +46,54 @@ func (co *Conversation) Route(r *wkhttp.WKHttp) {
 
 	conversation := r.Group("/v1/conversation")
 	{
-		// 离线的最近会话
-		conversation.POST("/sync", co.syncUserConversation)
+
+		conversation.POST("/sync", co.syncUserConversation) // 离线的最近会话
 		conversation.POST("/syncack", co.syncUserConversationAck)
+		conversation.PUT("/clearUnread", co.clearUnread) // 清除用户未读消息
 	}
 
+}
+func (co *Conversation) clearUnread(c *wkhttp.Context) {
+	var req struct {
+		LoginUID    string `json:"login_uid"`    // 登录用户id
+		ChannelID   string `json:"channel_id"`   // 清除某个频道的未读消息
+		ChannelType uint8  `json:"channel_type"` // 清除某个频道的未读消息
+		Unread      int    `json:"unread"`       // 未读数量 0表示清空所有未读数量
+	}
+	if err := c.BindJSON(&req); err != nil {
+		co.Error("数据格式有误！", zap.Error(err))
+		c.ResponseError(errors.New("数据格式有误！"))
+		return
+	}
+
+	err := co.ctx.IMClearConversationUnread(config.ClearConversationUnreadReq{
+		UID:         req.LoginUID,
+		ChannelID:   req.ChannelID,
+		ChannelType: req.ChannelType,
+		Unread:      req.Unread,
+		MessageSeq:  0,
+	})
+	if err != nil {
+		c.ResponseError(err)
+		return
+	}
+	// 发送清空红点的命令
+	err = co.ctx.SendCMD(config.MsgCMDReq{
+		NoPersist:   true,
+		ChannelID:   req.LoginUID,
+		ChannelType: common.ChannelTypePerson.Uint8(),
+		CMD:         common.CMDConversationUnreadClear,
+		Param: map[string]interface{}{
+			"channel_id":   req.ChannelID,
+			"channel_type": req.ChannelType,
+			"unread":       req.Unread,
+		},
+	})
+	if err != nil {
+		co.Error("命令发送失败！", zap.String("cmd", common.CMDConversationUnreadClear))
+		c.ResponseError(errors.New("命令发送失败！"))
+		return
+	}
 }
 
 // 获取离线的最近会话
@@ -124,21 +169,46 @@ func (co *Conversation) syncUserConversation(c *wkhttp.Context) {
 		c.ResponseError(errors.New("解析IM离线最近会话失败！"))
 		return
 	}
+	channelIDs := make([]string, 0, len(conversations))
+	if len(conversations) > 0 {
+		for _, conversation := range conversations {
+			if len(conversation.Recents) == 0 {
+				continue
+			}
 
-	// conversations, err := co.ctx.IMSyncUserConversation(loginUID, version, req.MsgCount, lastMsgSeqs, nil)
-	// if err != nil {
-	// 	co.Error("同步离线后的最近会话失败！", zap.Error(err), zap.String("loginUID", loginUID))
-	// 	c.ResponseError(errors.New("同步离线后的最近会话失败！"))
-	// 	return
-	// }
+			channelIDs = append(channelIDs, conversation.ChannelID)
+		}
+	}
+
+	// ---------- 用户频道消息偏移  ----------
+	channelOffsetModelMap := map[string]*channelOffsetModel{}
+	if len(channelIDs) > 0 {
+		channelOffsetModels, err := co.channelOffsetDB.queryWithUIDAndChannelIDs(loginUID, channelIDs)
+		if err != nil {
+			co.Error("查询用户频道偏移量失败！", zap.Error(err))
+			c.ResponseError(errors.New("查询用户频道偏移量失败！"))
+			return
+		}
+		if len(channelOffsetModels) > 0 {
+			for _, channelOffsetM := range channelOffsetModels {
+				channelOffsetModelMap[fmt.Sprintf("%s-%d", channelOffsetM.ChannelID, channelOffsetM.ChannelType)] = channelOffsetM
+			}
+		}
+	}
 
 	syncUserConversationResps := make([]*SyncUserConversationResp, 0, len(conversations))
 	userKey := loginUID
 	if len(conversations) > 0 {
 		for _, conversation := range conversations {
-
+			channelKey := fmt.Sprintf("%s-%d", conversation.ChannelID, conversation.ChannelType)
+			channelOffsetM := channelOffsetModelMap[channelKey]
 			// channelSetting := channelSettingMap[channelKey]
-			syncUserConversationResp := newSyncUserConversationResp(conversation, loginUID, co.messageExtraDB, co.messageUserExtraDB)
+			channelOffsetMsgSeq := uint32(0)
+			if channelOffsetM != nil {
+				channelOffsetMsgSeq = channelOffsetM.MessageSeq
+			}
+
+			syncUserConversationResp := newSyncUserConversationResp(conversation, loginUID, co.messageExtraDB, co.messageUserExtraDB, channelOffsetMsgSeq)
 			if len(syncUserConversationResp.Recents) > 0 {
 				syncUserConversationResps = append(syncUserConversationResps, syncUserConversationResp)
 			}
@@ -281,7 +351,7 @@ type SyncUserConversationResp struct {
 	Extra           *conversationExtraResp `json:"extra,omitempty"`    // 扩展
 }
 
-func newSyncUserConversationResp(resp *config.SyncUserConversationResp, loginUID string, messageExtraDB *messageExtraDB, messageUserExtraDB *messageUserExtraDB) *SyncUserConversationResp {
+func newSyncUserConversationResp(resp *config.SyncUserConversationResp, loginUID string, messageExtraDB *messageExtraDB, messageUserExtraDB *messageUserExtraDB, channelOffsetMessageSeq uint32) *SyncUserConversationResp {
 	recents := make([]*MsgSyncResp, 0, len(resp.Recents))
 	lastClientMsgNo := "" // 最新未被删除的消息的clientMsgNo
 	if len(resp.Recents) > 0 {
@@ -320,7 +390,7 @@ func newSyncUserConversationResp(resp *config.SyncUserConversationResp, loginUID
 			messageExtra := messageExtraMap[messageIDStr]
 			messageUserExtra := messageUserExtraMap[messageIDStr]
 			msgResp := &MsgSyncResp{}
-			msgResp.from(message, loginUID, messageExtra, messageUserExtra)
+			msgResp.from(message, loginUID, messageExtra, messageUserExtra, channelOffsetMessageSeq)
 			recents = append(recents, msgResp)
 
 			if lastClientMsgNo == "" && msgResp.IsDeleted == 0 {

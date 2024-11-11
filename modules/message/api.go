@@ -24,6 +24,7 @@ type Message struct {
 	log.Log
 	messageExtraDB     *messageExtraDB
 	messageUserExtraDB *messageUserExtraDB
+	channelOffsetDB    *channelOffsetDB
 }
 
 // New New
@@ -33,6 +34,7 @@ func New(ctx *config.Context) *Message {
 		Log:                log.NewTLog("Message"),
 		messageExtraDB:     newMessageExtraDB(ctx),
 		messageUserExtraDB: newMessageUserExtraDB(ctx),
+		channelOffsetDB:    newChannelOffsetDB(ctx),
 	}
 	return m
 }
@@ -45,8 +47,91 @@ func (m *Message) Route(r *wkhttp.WKHttp) {
 		message.POST("/revoke", m.revoke)                   // 撤回消息
 		message.POST("/channel/sync", m.syncChannelMessage) // 同步频道消息
 		message.POST("/extra/sync", m.syncMessageExtra)     // 同步消息扩展
+		message.POST("/offset", m.offset)                   // 清除频道消息
 	}
 
+}
+
+// 清除频道消息
+func (m *Message) offset(c *wkhttp.Context) {
+	var req struct {
+		LoginUID    string `json:"login_uid"`
+		ChannelID   string `json:"channel_id"`
+		ChannelType uint8  `json:"channel_type"`
+		MessageSeq  uint32 `json:"message_seq"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.ResponseErrorf("数据格式有误！", err)
+		return
+	}
+	if req.ChannelID == "" {
+		c.ResponseError(errors.New("频道ID不能为空！"))
+		return
+	}
+	if req.LoginUID == "" {
+		c.ResponseError(errors.New("登录用户uid不能为空"))
+		return
+	}
+	channelOffsetM, err := m.channelOffsetDB.queryWithUIDAndChannel(c.GetLoginUID(), req.ChannelID, req.ChannelType)
+	if err != nil {
+		m.Error("查询频道偏移数据失败！", zap.Error(err))
+		c.ResponseError(errors.New("查询频道偏移数据失败！"))
+		return
+	}
+	if channelOffsetM != nil {
+		if channelOffsetM.MessageSeq >= req.MessageSeq {
+			c.ResponseOK()
+			return
+		}
+	}
+
+	err = m.channelOffsetDB.insertOrUpdate(&channelOffsetModel{
+		UID:         c.GetLoginUID(),
+		ChannelID:   req.ChannelID,
+		ChannelType: req.ChannelType,
+		MessageSeq:  req.MessageSeq,
+	})
+	if err != nil {
+		m.Error("清除失败！", zap.Error(err))
+		c.ResponseError(errors.New("清除失败！"))
+		return
+	}
+	// 清除红点
+	resp, err := network.Post(base.APIURL+"/conversations/setUnread", []byte(util.ToJson(&config.ClearConversationUnreadReq{
+		UID:         req.LoginUID,
+		ChannelID:   req.ChannelID,
+		ChannelType: req.ChannelType,
+		MessageSeq:  req.MessageSeq,
+		Unread:      0,
+	})), nil)
+	if err != nil {
+		m.Error("清除红点失败！", zap.Error(err))
+		c.ResponseError(errors.New("清除红点失败！"))
+		return
+	}
+	err = base.HandlerIMError(resp)
+	if err != nil {
+		c.ResponseError(err)
+		return
+	}
+	// 发给指定频道
+	err = base.SendCMD(config.MsgCMDReq{
+		NoPersist:   true,
+		ChannelID:   c.GetLoginUID(),
+		ChannelType: common.ChannelTypePerson.Uint8(),
+		CMD:         "unreadClear",
+		Param: map[string]interface{}{
+			"channel_id":   req.ChannelID,
+			"channel_type": req.ChannelType,
+			"unread":       0,
+		},
+	})
+	if err != nil {
+		m.Error("发送撤回消息失败！", zap.Error(err))
+		c.ResponseError(errors.New("发送撤回消息失败！"))
+		return
+	}
+	c.ResponseOK()
 }
 
 // 同步扩展消息数据
@@ -137,8 +222,18 @@ func (m *Message) syncChannelMessage(c *wkhttp.Context) {
 	}
 
 	fmt.Println("resp----messages-->", len(syncChannelMessageResp.Messages))
+	channelOffset, err := m.channelOffsetDB.queryWithUIDAndChannel(c.GetLoginUID(), req.ChannelID, req.ChannelType)
+	if err != nil {
+		m.Error("查询频道偏移数据失败！", zap.Error(err))
+		c.ResponseError(errors.New("查询频道偏移数据失败！"))
+		return
+	}
+	var channelOffsetMessageSeq uint32 = 0
+	if channelOffset != nil {
+		channelOffsetMessageSeq = channelOffset.MessageSeq
 
-	c.Response(newSyncChannelMessageResp(syncChannelMessageResp, req.LoginUID, m.messageExtraDB, m.messageUserExtraDB))
+	}
+	c.Response(newSyncChannelMessageResp(syncChannelMessageResp, req.LoginUID, m.messageExtraDB, m.messageUserExtraDB, channelOffsetMessageSeq))
 }
 
 // 删除消息
@@ -279,7 +374,7 @@ type syncChannelMessageResp struct {
 	Messages        []*MsgSyncResp  `json:"messages"`          // 消息数据
 }
 
-func newSyncChannelMessageResp(resp *config.SyncChannelMessageResp, loginUID string, messageExtraDB *messageExtraDB, messageUserExtraDB *messageUserExtraDB) *syncChannelMessageResp {
+func newSyncChannelMessageResp(resp *config.SyncChannelMessageResp, loginUID string, messageExtraDB *messageExtraDB, messageUserExtraDB *messageUserExtraDB, channelOffsetMessageSeq uint32) *syncChannelMessageResp {
 	messages := make([]*MsgSyncResp, 0, len(resp.Messages))
 	if len(resp.Messages) > 0 {
 		messageIDs := make([]string, 0, len(resp.Messages))
@@ -317,7 +412,7 @@ func newSyncChannelMessageResp(resp *config.SyncChannelMessageResp, loginUID str
 			messageExtra := messageExtraMap[messageIDStr]
 			messageUserExtra := messageUserExtraMap[messageIDStr]
 			msgResp := &MsgSyncResp{}
-			msgResp.from(message, loginUID, messageExtra, messageUserExtra)
+			msgResp.from(message, loginUID, messageExtra, messageUserExtra, channelOffsetMessageSeq)
 			messages = append(messages, msgResp)
 		}
 	}
@@ -372,7 +467,7 @@ type MsgSyncResp struct {
 
 }
 
-func (m *MsgSyncResp) from(msgResp *config.MessageResp, loginUID string, messageExtraM *messageExtraModel, messageUserExtraM *messageUserExtraModel) {
+func (m *MsgSyncResp) from(msgResp *config.MessageResp, loginUID string, messageExtraM *messageExtraModel, messageUserExtraM *messageUserExtraModel, channelOffsetMessageSeq uint32) {
 	m.Header.NoPersist = msgResp.Header.NoPersist
 	m.Header.RedDot = msgResp.Header.RedDot
 	m.Header.SyncOnce = msgResp.Header.SyncOnce
@@ -443,9 +538,9 @@ func (m *MsgSyncResp) from(msgResp *config.MessageResp, loginUID string, message
 			m.IsDeleted = 1
 		}
 	}
-	// if channelOffsetMessageSeq != 0 && msgResp.MessageSeq <= channelOffsetMessageSeq {
-	// 	m.IsDeleted = 1
-	// }
+	if channelOffsetMessageSeq != 0 && msgResp.MessageSeq <= channelOffsetMessageSeq {
+		m.IsDeleted = 1
+	}
 	m.Payload = payloadMap
 
 	// msgReactionList := make([]*reactionSimpleResp, 0, len(reactionModels))
