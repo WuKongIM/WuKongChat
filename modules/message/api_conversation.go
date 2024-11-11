@@ -65,14 +65,19 @@ func (co *Conversation) clearUnread(c *wkhttp.Context) {
 		c.ResponseError(errors.New("数据格式有误！"))
 		return
 	}
-
-	err := co.ctx.IMClearConversationUnread(config.ClearConversationUnreadReq{
+	resp, err := network.Post(base.APIURL+"/conversations/setUnread", []byte(util.ToJson(&config.ClearConversationUnreadReq{
 		UID:         req.LoginUID,
 		ChannelID:   req.ChannelID,
 		ChannelType: req.ChannelType,
 		Unread:      req.Unread,
 		MessageSeq:  0,
-	})
+	})), nil)
+	if err != nil {
+		co.Error("清空红点错误", zap.Error(err))
+		c.ResponseError(errors.New("清空红点错误"))
+		return
+	}
+	err = base.HandlerIMError(resp)
 	if err != nil {
 		c.ResponseError(err)
 		return
