@@ -72,7 +72,7 @@ func (m *Message) offset(c *wkhttp.Context) {
 		c.ResponseError(errors.New("登录用户uid不能为空"))
 		return
 	}
-	channelOffsetM, err := m.channelOffsetDB.queryWithUIDAndChannel(c.GetLoginUID(), req.ChannelID, req.ChannelType)
+	channelOffsetM, err := m.channelOffsetDB.queryWithUIDAndChannel(req.LoginUID, req.ChannelID, req.ChannelType)
 	if err != nil {
 		m.Error("查询频道偏移数据失败！", zap.Error(err))
 		c.ResponseError(errors.New("查询频道偏移数据失败！"))
@@ -86,7 +86,7 @@ func (m *Message) offset(c *wkhttp.Context) {
 	}
 
 	err = m.channelOffsetDB.insertOrUpdate(&channelOffsetModel{
-		UID:         c.GetLoginUID(),
+		UID:         req.LoginUID,
 		ChannelID:   req.ChannelID,
 		ChannelType: req.ChannelType,
 		MessageSeq:  req.MessageSeq,
@@ -117,7 +117,7 @@ func (m *Message) offset(c *wkhttp.Context) {
 	// 发给指定频道
 	err = base.SendCMD(config.MsgCMDReq{
 		NoPersist:   true,
-		ChannelID:   c.GetLoginUID(),
+		ChannelID:   req.LoginUID,
 		ChannelType: common.ChannelTypePerson.Uint8(),
 		CMD:         "unreadClear",
 		Param: map[string]interface{}{
@@ -222,7 +222,7 @@ func (m *Message) syncChannelMessage(c *wkhttp.Context) {
 	}
 
 	fmt.Println("resp----messages-->", len(syncChannelMessageResp.Messages))
-	channelOffset, err := m.channelOffsetDB.queryWithUIDAndChannel(c.GetLoginUID(), req.ChannelID, req.ChannelType)
+	channelOffset, err := m.channelOffsetDB.queryWithUIDAndChannel(req.LoginUID, req.ChannelID, req.ChannelType)
 	if err != nil {
 		m.Error("查询频道偏移数据失败！", zap.Error(err))
 		c.ResponseError(errors.New("查询频道偏移数据失败！"))
@@ -300,8 +300,8 @@ func (m *Message) revoke(c *wkhttp.Context) {
 	if messageExtr == nil {
 		err = m.messageExtraDB.insert(&messageExtraModel{
 			MessageID:   req.MessageID,
-			MessageSeq:  0,
-			FromUID:     "",
+			MessageSeq:  req.MessageSeq,
+			FromUID:     req.LoginUID,
 			ChannelID:   fakeChannelID,
 			ChannelType: req.ChannelType,
 			ReadedCount: 0,
@@ -613,6 +613,7 @@ type deleteReq struct {
 type revokeReq struct {
 	LoginUID    string `json:"login_uid"`
 	MessageID   string `json:"message_id"`
+	MessageSeq  uint32 `json:"channel_seq"`
 	ClientMsgNo string `json:"client_msg_no"`
 	ChannelID   string `json:"channel_id"`
 	ChannelType uint8  `json:"channel_type"`

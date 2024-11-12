@@ -83,7 +83,7 @@ func (co *Conversation) clearUnread(c *wkhttp.Context) {
 		return
 	}
 	// 发送清空红点的命令
-	err = co.ctx.SendCMD(config.MsgCMDReq{
+	err = base.SendCMD(config.MsgCMDReq{
 		NoPersist:   true,
 		ChannelID:   req.LoginUID,
 		ChannelType: common.ChannelTypePerson.Uint8(),
@@ -99,6 +99,7 @@ func (co *Conversation) clearUnread(c *wkhttp.Context) {
 		c.ResponseError(errors.New("命令发送失败！"))
 		return
 	}
+	c.ResponseOK()
 }
 
 // 获取离线的最近会话
