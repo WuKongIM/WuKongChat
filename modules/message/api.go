@@ -613,7 +613,7 @@ type deleteReq struct {
 type revokeReq struct {
 	LoginUID    string `json:"login_uid"`
 	MessageID   string `json:"message_id"`
-	MessageSeq  uint32 `json:"channel_seq"`
+	MessageSeq  uint32 `json:"message_seq"`
 	ClientMsgNo string `json:"client_msg_no"`
 	ChannelID   string `json:"channel_id"`
 	ChannelType uint8  `json:"channel_type"`
