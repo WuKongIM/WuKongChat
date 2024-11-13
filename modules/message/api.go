@@ -43,7 +43,7 @@ func New(ctx *config.Context) *Message {
 func (m *Message) Route(r *wkhttp.WKHttp) {
 	message := r.Group("/v1/message")
 	{
-		message.DELETE("", m.delete)                        // 删除消息
+		message.POST("/delete", m.delete)                   // 删除消息
 		message.POST("/revoke", m.revoke)                   // 撤回消息
 		message.POST("/channel/sync", m.syncChannelMessage) // 同步频道消息
 		message.POST("/extra/sync", m.syncMessageExtra)     // 同步消息扩展
